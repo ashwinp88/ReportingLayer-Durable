@@ -161,7 +161,11 @@ namespace ReportingLayer_Durable
 																				GroupId Int,
 																				GroupName NVARCHAR(256),  
 																				RuleId Int,
-																				RuleName NVARCHAR(256)); 
+																				RuleName NVARCHAR(256)
+																			)
+																			--WITH
+																			--	(MEMORY_OPTIMIZED = ON,
+																			--	DURABILITY = SCHEMA_AND_DATA); 
 
 																		CREATE NONCLUSTERED INDEX [IX_AF_TEMP_AppSource_Data_Rule_{data.modelId}]
 																		ON [dbo].[AF_TEMP_AppSource_Data_Rule_{data.modelId}] ([PerfOblId], [RuleID], [GroupName], [RuleName])
@@ -187,6 +191,9 @@ namespace ReportingLayer_Durable
 													{createAndInsertStrings.Result.Rows[0]["CalendarCreate"]},
 													{createAndInsertStrings.Result.Rows[0]["Create"]}	
 												)
+												--WITH
+												--	(MEMORY_OPTIMIZED = ON,
+												--	DURABILITY = SCHEMA_AND_DATA);
 												CREATE CLUSTERED INDEX IX on [dbo].[App_CAMAmortizationScheduleReportingFilter_{data.modelId}]	(Rownum) 
 												CREATE NONCLUSTERED INDEX  IX_NC on [dbo].[App_CAMAmortizationScheduleReportingFilter_{data.modelId}] (";
 			if (sizeOfPerfOblId.Result <= 1700)
@@ -248,7 +255,10 @@ namespace ReportingLayer_Durable
 																		END
 																		CREATE TABLE AF_TEMP_App_CAMSchedule_Closed_Ideal_{data.modelId}
 																			([_POBId] [nvarchar]({sizeOfPerfOblId.Result}) NULL,
-																			 [_POBName] [nvarchar]({sizeOfPerfOblName.Result}) NULL); 
+																			 [_POBName] [nvarchar]({sizeOfPerfOblName.Result}) NULL)
+																		--WITH	
+																		--		(MEMORY_OPTIMIZED = ON,
+																		--		DURABILITY = SCHEMA_AND_DATA);
 
 																		CREATE INDEX IX_AF_TEMP_App_CAMSchedule_Closed_Ideal
 																			ON AF_TEMP_App_CAMSchedule_Closed_Ideal_{data.modelId} (_POBId)
@@ -259,8 +269,7 @@ namespace ReportingLayer_Durable
 																		FROM 
 																		App_CAMPOData d
 																		JOIN App_CAMGroups g on d.GroupId = g.GroupId
-																		WHERE g.ModelId = '{data.modelId}'
-																		Order by PerfOblId;"
+																		WHERE g.ModelId = '{data.modelId}';"
 												});
 
 			var load_AppSource_Data_Rule = context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
@@ -274,7 +283,8 @@ namespace ReportingLayer_Durable
 			await Task.WhenAll(schedule_Closed_Ideal, load_AppSource_Data_Rule);
 			//context.SetCustomStatus($"drop and recreate AF_TEMP_App_CAMSchedule_Closed_Ideal_{data.modelId}.. success");
 
-
+			#region Physical_Tables
+			/*
 			var app_CAMSchedule = context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
 												new
 												{
@@ -371,6 +381,8 @@ namespace ReportingLayer_Durable
 												});
 
 			await Task.WhenAll(app_CAMSchedule, app_CAMSchedule_Closed, app_CAMSchedule_Ideal);
+			*/
+			#endregion
 
 			await context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
 												new
@@ -413,11 +425,68 @@ namespace ReportingLayer_Durable
 																				TrueUp, {createAndInsertStrings.Result.Rows[0]["SumCalendar"]}
 																			FROM
 																				(
-																			Select * from AF_TEMP_App_CAMSchedule_{data.modelId}
+																				SELECT 
+																					0 as Ideal,
+																					s.PerfOblId,
+																					s.PerfOblName,
+																					convert(int, s.EntryType) as EntryType,
+																					convert(int, s.TrueUp) as TrueUp,
+																					d.name as TimeName,
+																					s.Amount,
+																					s.ModelId,
+																					a.GroupId,
+																					a.GroupName,
+																					a.RuleId,
+																					a.RuleName
+																				FROM App_CAMSchedule_{data.modelId}  s
+																					JOIN DimensionMembers d on s.timeid = d.dimensionmemberid AND dimensionname = 'Time'
+																					LEFT JOIN AF_TEMP_AppSource_Data_Rule_{data.modelId} a on a.PerfOblId = s.PerfOblId 
+																					WHERE ISNULL(s.amount, 0) <> 0
+																					AND a.RuleID IS NOT NULL 
+																					AND a.GroupName IS NOT NULL 
+																					AND a.RuleName IS NOT NULL
 																				UNION ALL
-																			Select * from AF_TEMP_App_CAMSchedule_Closed_{data.modelId}
+																				SELECT 
+																					0 as Ideal,
+																					s.PerfOblId,
+																					s.PerfOblName,
+																					convert(int, s.EntryType) as EntryType,
+																					convert(int, s.TrueUp) as TrueUp,
+																					d.name as TimeName,
+																					s.Amount,
+																					s.ModelId,
+																					a.GroupId,
+																					a.GroupName,
+																					a.RuleId,
+																					a.RuleName
+																				FROM App_CAMSchedule_Closed_{data.modelId}  s
+																					JOIN DimensionMembers d on s.timeid = d.dimensionmemberid AND dimensionname = 'Time'
+																					LEFT JOIN AF_TEMP_AppSource_Data_Rule_{data.modelId} a on a.PerfOblId = s.PerfOblId 
+																					WHERE ISNULL(s.amount, 0) <> 0
+																					AND a.RuleID IS NOT NULL 
+																					AND a.GroupName IS NOT NULL 
+																					AND a.RuleName IS NOT NULL
 																				UNION ALL
-																			Select * from AF_TEMP_App_CAMSchedule_Ideal_{data.modelId}
+																				SELECT 
+																					1 as Ideal,
+																					s.PerfOblId,
+																					s.PerfOblName,
+																					convert(int, s.EntryType) as EntryType,
+																					0 as TrueUp,
+																					d.name as TimeName,
+																					s.Amount,
+																					s.ModelId,
+																					a.GroupId,
+																					a.GroupName,
+																					a.RuleId,
+																					a.RuleName
+																				FROM App_CAMSchedule_Ideal_{data.modelId}  s
+																					JOIN DimensionMembers d on s.timeid = d.dimensionmemberid AND dimensionname = 'Time'
+																					LEFT JOIN AF_TEMP_AppSource_Data_Rule_{data.modelId} a on a.PerfOblId = s.PerfOblId 
+																					WHERE ISNULL(s.amount, 0) <> 0
+																					AND a.RuleID IS NOT NULL 
+																					AND a.GroupName IS NOT NULL 
+																					AND a.RuleName IS NOT NULL
 																				) a
 																			PIVOT
 																			(
