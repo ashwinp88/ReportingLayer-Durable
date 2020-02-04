@@ -24,9 +24,11 @@ namespace ReportingLayer_Durable
 		public static async Task<long> RunOrchestrator(
 			[OrchestrationTrigger] DurableOrchestrationContext context, ILogger log)
 		{
-			var data = context.GetInput<dynamic>();
+            var retryOptions = new RetryOptions(firstRetryInterval: TimeSpan.FromSeconds(5), maxNumberOfAttempts: 3);
 
-			var sizeOfPerfOblId =  context.CallActivityAsync<int>("DurableReportingLayer_ExecuteScalar",
+            var data = context.GetInput<dynamic>();
+
+			var sizeOfPerfOblId =  context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteScalar", retryOptions,
 									new {  caption = $"get size of PerfOblId column",
 										   data.connectionString,
 										   queryString = $@"SELECT MAX(LEN(PerfOblId))
@@ -34,8 +36,8 @@ namespace ReportingLayer_Durable
 															App_CAMPOData d
 															JOIN App_CAMGroups g on d.GroupId = g.GroupId
 															WHERE g.ModelId = '{data.modelId}';" });
-			var sizeOfPerfOblName = context.CallActivityAsync<int>("DurableReportingLayer_ExecuteScalar",
-								   new
+			var sizeOfPerfOblName = context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteScalar", retryOptions,
+                                   new
 								   {
 									   caption = $"get size of PerfOblName column",
 									   data.connectionString,
@@ -45,8 +47,8 @@ namespace ReportingLayer_Durable
 														JOIN App_CAMGroups g on d.GroupId = g.GroupId
 														WHERE g.ModelId = '{data.modelId}';"
 								   });
-			var createAndInsertStrings = context.CallActivityAsync<DataTable>("DurableReportingLayer_GetDataTable",
-										   new
+			var createAndInsertStrings = context.CallActivityWithRetryAsync<DataTable>("DurableReportingLayer_GetDataTable", retryOptions,
+                                           new
 										   {
 											   tableName = $"Strings",
 											   data.connectionString,
@@ -81,8 +83,8 @@ namespace ReportingLayer_Durable
 																			  FOR xml path ('')), 1, 1, '') AS SumCalendar ;"
 										   });
 
-			var modelNames = context.CallActivityAsync<DataTable>("DurableReportingLayer_GetDataTable",
-								new
+			var modelNames = context.CallActivityWithRetryAsync<DataTable>("DurableReportingLayer_GetDataTable", retryOptions,
+                                new
 								{
 									tableName = $"ModelNames",
 									data.connectionString,
@@ -124,8 +126,8 @@ namespace ReportingLayer_Durable
 												GROUP  BY t2.modelname, 
 														  t2.perfoblid ;"});
 
-			var additionalColumns = context.CallActivityAsync<string>("DurableReportingLayer_ExecuteScalar",
-									new
+			var additionalColumns = context.CallActivityWithRetryAsync<string>("DurableReportingLayer_ExecuteScalar", retryOptions,
+                                    new
 									{
 										caption = $"get additional columns",
 										data.connectionString,
@@ -147,8 +149,8 @@ namespace ReportingLayer_Durable
 
 
 
-			var create_AppSource_Data_Rule =  context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-											   new
+			var create_AppSource_Data_Rule =  context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                               new
 											   {
 												   caption = $"drop and recreate AF_TEMP_AppSource_Data_Rule_{data.modelId}",
 												   data.connectionString,
@@ -202,8 +204,8 @@ namespace ReportingLayer_Durable
 				create_ReportingLayer_Qry += $"{Environment.NewLine} PerfOblName, ";
 			create_ReportingLayer_Qry += $@"GroupName, RuleName, Ideal, EntryType, TrueUp, {additionalColumns.Result})
 											Include ({createAndInsertStrings.Result.Rows[0]["CalendarInsert"]}) ";
-			var create_ReportingLayer = context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-											   new
+			var create_ReportingLayer = context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                               new
 											   {
 												   caption = $"drop and recreate App_CAMAmortizationScheduleReportingFilter_{data.modelId}",
 												   data.connectionString,
@@ -233,7 +235,7 @@ namespace ReportingLayer_Durable
 								FROM App_CAM_Trans_Data_{data.modelId}_{r["ModelName"]}
 								JOIN AF_TEMP_App_CAMSchedule_Closed_Ideal_{data.modelId} i ON i._POBId = {r["PerfOblId"]}
 								GROUP BY {r["PerfOblId"]} ";
-				if (modelNames.Result.Rows.IndexOf(r) != modelNames.Result.Rows.Count && modelNames.Result.Rows.Count > 1)
+				if (modelNames.Result.Rows.IndexOf(r) != modelNames.Result.Rows.Count - 1 && modelNames.Result.Rows.Count > 1)
 				{
 					appSource_Data_Rule_Insert_Qry += $"{Environment.NewLine} UNION ALL";
 					join_Qry += $"{Environment.NewLine} UNION ALL";
@@ -244,8 +246,8 @@ namespace ReportingLayer_Durable
 
 			await Task.WhenAll(create_AppSource_Data_Rule, create_ReportingLayer);
 
-			var schedule_Closed_Ideal =  context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-												new
+			var schedule_Closed_Ideal =  context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                                new
 												{
 													caption = $"drop and recreate AF_TEMP_App_CAMSchedule_Closed_Ideal_{data.modelId}",
 													data.connectionString,
@@ -272,8 +274,8 @@ namespace ReportingLayer_Durable
 																		WHERE g.ModelId = '{data.modelId}';"
 												});
 
-			var load_AppSource_Data_Rule = context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-												new
+			var load_AppSource_Data_Rule = context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                                new
 												{
 													caption = $"load AF_TEMP_AppSource_Data_Rule_{data.modelId}",
 													data.connectionString,
@@ -284,9 +286,9 @@ namespace ReportingLayer_Durable
 			//context.SetCustomStatus($"drop and recreate AF_TEMP_App_CAMSchedule_Closed_Ideal_{data.modelId}.. success");
 
 			#region Physical_Tables
-			/*
-			var app_CAMSchedule = context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-												new
+			
+			var app_CAMSchedule = context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                                new
 												{
 													caption = $"drop and recreate AF_TEMP_App_CAMSchedule_{data.modelId}",
 													data.connectionString,
@@ -316,8 +318,8 @@ namespace ReportingLayer_Durable
 																			AND a.GroupName IS NOT NULL 
 																			AND a.RuleName IS NOT NULL"
 												});
-			var app_CAMSchedule_Closed = context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-												new
+			var app_CAMSchedule_Closed = context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                                new
 												{
 													caption = $"drop and recreate AF_TEMP_App_CAMSchedule_Closed_{data.modelId}",
 													data.connectionString,
@@ -348,8 +350,8 @@ namespace ReportingLayer_Durable
 																			AND a.RuleName IS NOT NULL"
 												});
 
-			var app_CAMSchedule_Ideal = context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-												new
+			var app_CAMSchedule_Ideal = context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                                new
 												{
 													caption = $"drop and recreate AF_TEMP_App_CAMSchedule_Ideal_{data.modelId}",
 													data.connectionString,
@@ -381,11 +383,11 @@ namespace ReportingLayer_Durable
 												});
 
 			await Task.WhenAll(app_CAMSchedule, app_CAMSchedule_Closed, app_CAMSchedule_Ideal);
-			*/
+			
 			#endregion
 
-			await context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-												new
+			await context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                                new
 												{
 													caption = $"load [App_CAMAmortizationScheduleReportingFilter_{data.modelId}]",
 													data.connectionString,
@@ -417,83 +419,18 @@ namespace ReportingLayer_Durable
 																		{createAndInsertStrings.Result.Rows[0]["Insert"]}
 																		FROM
 																		(
-																			SELECT
-																				PerfOblId, 
-																				PerfOblName,GroupId, GroupName, RuleName, RuleId, 
-																				Ideal, 
-																				EntryType,
-																				TrueUp, {createAndInsertStrings.Result.Rows[0]["SumCalendar"]}
-																			FROM
-																				(
-																				SELECT 
-																					0 as Ideal,
-																					s.PerfOblId,
-																					s.PerfOblName,
-																					convert(int, s.EntryType) as EntryType,
-																					convert(int, s.TrueUp) as TrueUp,
-																					d.name as TimeName,
-																					s.Amount,
-																					s.ModelId,
-																					a.GroupId,
-																					a.GroupName,
-																					a.RuleId,
-																					a.RuleName
-																				FROM App_CAMSchedule_{data.modelId}  s
-																					JOIN DimensionMembers d on s.timeid = d.dimensionmemberid AND dimensionname = 'Time'
-																					LEFT JOIN AF_TEMP_AppSource_Data_Rule_{data.modelId} a on a.PerfOblId = s.PerfOblId 
-																					WHERE ISNULL(s.amount, 0) <> 0
-																					AND a.RuleID IS NOT NULL 
-																					AND a.GroupName IS NOT NULL 
-																					AND a.RuleName IS NOT NULL
+                                                                            Select * from AF_TEMP_App_CAMSchedule_{data.modelId}
 																				UNION ALL
-																				SELECT 
-																					0 as Ideal,
-																					s.PerfOblId,
-																					s.PerfOblName,
-																					convert(int, s.EntryType) as EntryType,
-																					convert(int, s.TrueUp) as TrueUp,
-																					d.name as TimeName,
-																					s.Amount,
-																					s.ModelId,
-																					a.GroupId,
-																					a.GroupName,
-																					a.RuleId,
-																					a.RuleName
-																				FROM App_CAMSchedule_Closed_{data.modelId}  s
-																					JOIN DimensionMembers d on s.timeid = d.dimensionmemberid AND dimensionname = 'Time'
-																					LEFT JOIN AF_TEMP_AppSource_Data_Rule_{data.modelId} a on a.PerfOblId = s.PerfOblId 
-																					WHERE ISNULL(s.amount, 0) <> 0
-																					AND a.RuleID IS NOT NULL 
-																					AND a.GroupName IS NOT NULL 
-																					AND a.RuleName IS NOT NULL
+																			Select * from AF_TEMP_App_CAMSchedule_Closed_{data.modelId}
 																				UNION ALL
-																				SELECT 
-																					1 as Ideal,
-																					s.PerfOblId,
-																					s.PerfOblName,
-																					convert(int, s.EntryType) as EntryType,
-																					0 as TrueUp,
-																					d.name as TimeName,
-																					s.Amount,
-																					s.ModelId,
-																					a.GroupId,
-																					a.GroupName,
-																					a.RuleId,
-																					a.RuleName
-																				FROM App_CAMSchedule_Ideal_{data.modelId}  s
-																					JOIN DimensionMembers d on s.timeid = d.dimensionmemberid AND dimensionname = 'Time'
-																					LEFT JOIN AF_TEMP_AppSource_Data_Rule_{data.modelId} a on a.PerfOblId = s.PerfOblId 
-																					WHERE ISNULL(s.amount, 0) <> 0
-																					AND a.RuleID IS NOT NULL 
-																					AND a.GroupName IS NOT NULL 
-																					AND a.RuleName IS NOT NULL
-																				) a
-																			PIVOT
-																			(
-																				SUM(Amount) FOR TimeName IN ({createAndInsertStrings.Result.Rows[0]["CalendarInsert"]})
-																			) p
-																			GROUP BY PerfOblId, PerfOblName,GroupId, GroupName, RuleName, RuleId, Ideal, TrueUp, EntryType
-																			) x	
+																			Select * from AF_TEMP_App_CAMSchedule_Ideal_{data.modelId}
+																		) a
+																		PIVOT
+																		(
+																			SUM(Amount) FOR TimeName IN ({createAndInsertStrings.Result.Rows[0]["CalendarInsert"]})
+																		) p
+																		GROUP BY PerfOblId, PerfOblName,GroupId, GroupName, RuleName, RuleId, Ideal, TrueUp, EntryType
+																		) x	
 																		{join_Qry}
 																		GROUP BY  x.PerfOblId,PerfOblName, GroupId, GroupName, RuleName, RuleId,
 																		Ideal , EntryType ,TrueUp, {createAndInsertStrings.Result.Rows[0]["Insert"]}
@@ -501,8 +438,8 @@ namespace ReportingLayer_Durable
 																		"
 												});
 
-			await context.CallActivityAsync<int>("DurableReportingLayer_ExecuteQuery",
-												new
+			await context.CallActivityWithRetryAsync<int>("DurableReportingLayer_ExecuteQuery", retryOptions,
+                                                new
 												{
 													caption = $"drop and recreate App_CAMAmortizationScheduleReportingFilterColumns_{data.modelId}",
 													data.connectionString,
@@ -540,7 +477,6 @@ namespace ReportingLayer_Durable
 				{
 					cmd.CommandTimeout = COMMAND_TIMEOUT;
 					cmd.CommandType = CommandType.Text;
-
 					if (data.parameters != null)
 						cmd.Parameters.AddRange((SqlParameter[])data.parameters);
 
