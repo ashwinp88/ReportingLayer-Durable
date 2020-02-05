@@ -419,6 +419,14 @@ namespace ReportingLayer_Durable
 																		{createAndInsertStrings.Result.Rows[0]["Insert"]}
 																		FROM
 																		(
+																			SELECT
+																				PerfOblId, 
+																				PerfOblName,GroupId, GroupName, RuleName, RuleId, 
+																				Ideal, 
+																				EntryType,
+																				TrueUp, {createAndInsertStrings.Result.Rows[0]["SumCalendar"]}
+																			FROM
+																				(
                                                                             Select * from AF_TEMP_App_CAMSchedule_{data.modelId}
 																				UNION ALL
 																			Select * from AF_TEMP_App_CAMSchedule_Closed_{data.modelId}
