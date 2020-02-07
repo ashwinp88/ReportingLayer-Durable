@@ -478,24 +478,29 @@ namespace ReportingLayer_Durable
 		public static object ExecuteScalar([ActivityTrigger] DurableActivityContext context, ILogger log)
 		{
 			var data = context.GetInput<dynamic>();
-
-			using (SqlConnection conn = new SqlConnection((string)data.connectionString))
+			try
 			{
-				using (SqlCommand cmd = new SqlCommand((string)data.queryString, conn))
+				using (SqlConnection conn = new SqlConnection((string)data.connectionString))
 				{
-					cmd.CommandTimeout = COMMAND_TIMEOUT;
-					cmd.CommandType = CommandType.Text;
-					if (data.parameters != null)
-						cmd.Parameters.AddRange((SqlParameter[])data.parameters);
+					using (SqlCommand cmd = new SqlCommand((string)data.queryString, conn))
+					{
+						cmd.CommandTimeout = COMMAND_TIMEOUT;
+						cmd.CommandType = CommandType.Text;
+						if (data.parameters != null)
+							cmd.Parameters.AddRange((SqlParameter[])data.parameters);
 
-					//var adapter = new SqlDataAdapter(cmd);
-					//adapter.Fill(dt);
-					conn.Open();
-					var ret = cmd.ExecuteScalar();
-					conn.Close();
-					log.LogInformation($"successfully executed {(string)data.caption}");
-					return ret;
+						conn.Open();
+						var ret = cmd.ExecuteScalar();
+						conn.Close();
+						log.LogInformation($"successfully executed {(string)data.caption}");
+						return ret;
+					}
 				}
+			}
+			catch (SqlException ex)
+			{
+				log.LogError(ex, (string)data.queryString);
+				throw ex;
 			}
 		}
 
@@ -503,25 +508,30 @@ namespace ReportingLayer_Durable
 		public static int ExecuteQuery([ActivityTrigger] DurableActivityContext context, ILogger log)
 		{
 			var data = context.GetInput<dynamic>();
-
-			using (SqlConnection conn = new SqlConnection((string)data.connectionString))
+			try
 			{
-				using (SqlCommand cmd = new SqlCommand((string)data.queryString, conn))
+				using (SqlConnection conn = new SqlConnection((string)data.connectionString))
 				{
-					cmd.CommandTimeout = COMMAND_TIMEOUT;
-					cmd.CommandType = CommandType.Text;
+					using (SqlCommand cmd = new SqlCommand((string)data.queryString, conn))
+					{
+						cmd.CommandTimeout = COMMAND_TIMEOUT;
+						cmd.CommandType = CommandType.Text;
 
-					if (data.parameters != null)
-						cmd.Parameters.AddRange((SqlParameter[])data.parameters);
+						if (data.parameters != null)
+							cmd.Parameters.AddRange((SqlParameter[])data.parameters);
 
-					//var adapter = new SqlDataAdapter(cmd);
-					//adapter.Fill(dt);
-					conn.Open();
-					var ret = cmd.ExecuteNonQuery();
-					conn.Close();
-					log.LogInformation($"successfully executed {(string)data.caption}");
-					return ret;
+						conn.Open();
+						var ret = cmd.ExecuteNonQuery();
+						conn.Close();
+						log.LogInformation($"successfully executed {(string)data.caption}");
+						return ret;
+					}
 				}
+			}
+			catch (SqlException ex)
+			{
+				log.LogError(ex, (string)data.queryString);
+				throw ex;
 			}
 		}
 
@@ -529,26 +539,36 @@ namespace ReportingLayer_Durable
 		public static DataTable GetDataTable([ActivityTrigger] DurableActivityContext context, ILogger log)
 		{
 			var data = context.GetInput<dynamic>();
-
-			DataTable dt = new DataTable((string)data.tableName);
-
-			log.LogInformation($"attempting to get datatable {(string)data.tableName}");
-
-			using (SqlConnection conn = new SqlConnection((string)data.connectionString))
+			try
 			{
-				using (SqlCommand cmd = new SqlCommand((string)data.queryString, conn))
+				DataTable dt = new DataTable((string)data.tableName);
+
+				log.LogInformation($"attempting to get datatable {(string)data.tableName}");
+
+				using (SqlConnection conn = new SqlConnection((string)data.connectionString))
 				{
-					cmd.CommandTimeout = COMMAND_TIMEOUT;
-					cmd.CommandType = CommandType.Text;
+					using (SqlCommand cmd = new SqlCommand((string)data.queryString, conn))
+					{
+						cmd.CommandTimeout = COMMAND_TIMEOUT;
+						cmd.CommandType = CommandType.Text;
 
-					if (data.parameters != null)
-						cmd.Parameters.AddRange((SqlParameter[])data.parameters);
+						if (data.parameters != null)
+							cmd.Parameters.AddRange((SqlParameter[])data.parameters);
 
-					var adapter = new SqlDataAdapter(cmd);
-					adapter.Fill(dt);
-					return dt;
+						var adapter = new SqlDataAdapter(cmd);
+						adapter.Fill(dt);
+						return dt;
+					}
 				}
 			}
+			catch (SqlException ex)
+			{
+				log.LogError(ex, (string)data.queryString);
+				throw ex;
+			}
+
+
+			
 		}
 
 		[FunctionName("DurableReportingLayer_HttpStart")]
